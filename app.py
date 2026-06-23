@@ -252,3 +252,26 @@ else:
                     st.plotly_chart(fig_m_profit, use_container_width=True)
         else:
             st.warning(f"⚠️ '{selected_month}' ফরম্যাটের কোনো ফাইল পাওয়া যায়নি।")
+
+
+# স্ট্রিমলিটের ডিফল্ট ফুটার লুকানো এবং নিজের নাম যোগ করার কোড
+hide_and_footer_style = """
+            <style>
+            footer {visibility: hidden;}
+            .custom-footer {
+                position: fixed;
+                left: 0;
+                bottom: 0;
+                width: 100%;
+                background-color: transparent;
+                color: #555555; /* লেখার কালার (ধূসর) */
+                text-align: right; /* ডান কোণায় দেখানোর জন্য */
+                padding-right: 20px;
+                padding-bottom: 10px;
+                font-size: 14px;
+                font-weight: 500;
+            }
+            </style>
+            <div class="custom-footer">Created By Shourav Shahriar</div>
+            """
+st.markdown(hide_and_footer_style, unsafe_allow_html=True)
