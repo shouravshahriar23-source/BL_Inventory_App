@@ -68,7 +68,7 @@ elif mode == "দৈনিক রিপোর্ট":
                     df_sales[col] = pd.to_numeric(df_sales[col], errors='coerce').fillna(0).astype(int)
                 st.dataframe(df_sales, use_container_width=True, hide_index=True)
                 
-                # সেকশন ৩ (আপনার চাহিদা অনুযায়ী ড্যাশবোর্ডে যুক্ত করা হলো)
+                # সেকশন ৩ ( চাহিদা অনুযায়ী ড্যাশবোর্ডে যুক্ত করা)
                 st.subheader("৩. কার কাছে বর্তমানে কি প্রোডাক্ট রয়েছে (SR Wise Closing Stock)")
                 # ৩ নম্বর সেকশনের প্রথম লাইনে কলামের নাম বা হেডার থাকে (Index 30), তাই একটু আলাদাভাবে কাটা হয়েছে
                 idx_sr = df_dash[df_dash.iloc[:, 0].astype(str).str.contains("কার কাছে বর্তমানে", na=False)].index
@@ -262,7 +262,7 @@ hide_default_style = """
             """
 st.markdown(hide_default_style, unsafe_allow_html=True)
 
-# একদম নিচে আলাদা লাইনে আপনার নাম দেখানোর কোড
+# একদম নিচে আলাদা লাইনে ডেভেলপারের নাম দেখানোর কোড
 st.markdown("---") # এটি একটি সুন্দর চিকন ডিভাইডার লাইন তৈরি করবে
 st.markdown(
     "<p style='text-align: right; color: #555555; font-size: 14px; font-weight: 500;'>Created By Shourav Shahriar</p>", 
