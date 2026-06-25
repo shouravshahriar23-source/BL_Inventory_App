@@ -11,7 +11,7 @@ if not os.path.exists(FOLDER_PATH):
 
 st.set_page_config(page_title="Banglalink Inventory & Monthly Analyzer", layout="wide")
 
-# --- ১. সিকিউর লগইন সিস্টেম (আপনার মেইন পেজ কনফিগারেশনের নিচে যোগ করা হয়েছে) ---
+# --- ১. সিকিউর লগইন সিস্টেম (মেইন পেজ কনফিগারেশনের নিচে যোগ করা হয়েছে) ---
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
