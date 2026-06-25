@@ -2,13 +2,39 @@ import streamlit as st
 import pandas as pd
 import os
 import plotly.express as px
+from io import BytesIO  # <-- এক্সেল ডাউনলোডের জন্য নতুন যোগ করা হয়েছে
 
-# ফোল্ডার কনফিগারেশন
+# ফোল্ডার稳 কনফিগারেশন
 FOLDER_PATH = "uploaded_files"
 if not os.path.exists(FOLDER_PATH):
     os.makedirs(FOLDER_PATH)
 
 st.set_page_config(page_title="Banglalink Inventory & Monthly Analyzer", layout="wide")
+
+# --- ১. সিকিউর লগইন সিস্টেম (আপনার মেইন পেজ কনফিগারেশনের নিচে যোগ করা হয়েছে) ---
+if "logged_in" not in st.session_state:
+    st.session_state["logged_in"] = False
+
+if not st.session_state["logged_in"]:
+    st.markdown("<br><br><h2 style='text-align: center; color: #FF6600;'>🔐 Banglalink Inventory System Login</h2>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1, 1.5, 1])
+    with col2:
+        st.markdown("<div style='background-color: #f9f9f9; padding: 25px; border-radius: 10px; border: 1px solid #ddd;'>", unsafe_allow_html=True)
+        username = st.text_input("ইউজারনেম (Username):", key="user_input")
+        password = st.text_input("পাসওয়ার্ড (Password):", type="password", key="pass_input")
+        login_btn = st.button("লগইন করুন", use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+        
+        if login_btn:
+            if username == "Shourav" and password == "admin123":
+                st.session_state["logged_in"] = True
+                st.rerun()
+            else:
+                st.error("❌ ভুল ইউজারনেম অথবা পাসওয়ার্ড! আবার চেষ্টা করুন।")
+    st.stop()  # লগইন না হওয়া পর্যন্ত নিচের মূল কোড রান হবে না
+
+# --- লগইন সফল হলে নিচের মূল কোডটি রান হবে ---
+
 st.markdown("<h1 style='text-align: center; color: #FF6600;'>📶 Banglalink Distribution House</h1>", unsafe_allow_html=True)
 
 # ফাইল লোড করা (শুধুমাত্র .xlsx ফাইল প্রসেস করা হবে)
@@ -25,7 +51,7 @@ def get_clean_section(df, start_keyword, num_rows=12, cols_range=(0, 4)):
         sub_df = df.iloc[start_idx:start_idx+num_rows, cols_range[0]:cols_range[1]].copy()
         sub_df = sub_df.dropna(subset=[sub_df.columns[0]])
         
-        # প্রোডাক্ট বা কর্মীর তালিকায় হেডলাইন বা অপ্রয়োজনীয় রো বাদ দেওয়ার ফিল্টার
+        # প্রোডাক্ট বা কর্মীর তালিকায় হেডলাইন বা অপ্রয়োজনীয় রো বাদ দেওয়ার ফিল্টার
         invalid_keywords = [
             "Total", "সর্বমোট", "প্রোডাক্টের নাম", "Product Name", "Product", 
             "মোট প্রোডাক্ট", "Total Product Profit", "কার কাছে বর্তমানে", 
@@ -36,6 +62,14 @@ def get_clean_section(df, start_keyword, num_rows=12, cols_range=(0, 4)):
         return sub_df
     return pd.DataFrame()
 
+# --- ২. এক্সেল কনভার্ট করার হেল্পার ফাংশন (get_clean_section এর নিচে যোগ করা হয়েছে) ---
+def convert_df_to_excel(df):
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Summary_Report')
+    return output.getvalue()
+
+
 if not files:
     st.info("💡 অনুগ্রহ করে `uploaded_files` ফোল্ডারে আপনার এক্সেল (.xlsx) ফাইলগুলো রাখুন।")
 
@@ -44,6 +78,11 @@ elif mode == "দৈনিক রিপোর্ট":
     selected_file = st.sidebar.selectbox("📅 ফাইল সিলেক্ট করুন:", files)
     if selected_file:
         file_path = os.path.join(FOLDER_PATH, selected_file)
+        
+        # --- ৩. দৈনিক রিপোর্টের উপরে তারিখ প্রদর্শন (ফাইলের নাম থেকে ডাইনামিকালি বের করা) ---
+        clean_date = selected_file.replace("Final Daily House  Inventory Master Tracker ", "").replace(".xlsx", "").strip()
+        st.markdown(f"<h3 style='text-align: center; color: #444444;'>📅 রিপোর্টের তারিখ: {clean_date}</h3>", unsafe_allow_html=True)
+        st.markdown("---")
         
         def read_sheet(sheet_name):
             return pd.read_excel(file_path, sheet_name=sheet_name, header=None)
@@ -68,16 +107,16 @@ elif mode == "দৈনিক রিপোর্ট":
                     df_sales[col] = pd.to_numeric(df_sales[col], errors='coerce').fillna(0).astype(int)
                 st.dataframe(df_sales, use_container_width=True, hide_index=True)
                 
-                # সেকশন ৩ ( চাহিদা অনুযায়ী ড্যাশবোর্ডে যুক্ত করা)
-                st.subheader("৩. কার কাছে বর্তমানে কি প্রোডাক্ট রয়েছে (SR Wise Closing Stock)")
-                # ৩ নম্বর সেকশনের প্রথম লাইনে কলামের নাম বা হেডার থাকে (Index 30), তাই একটু আলাদাভাবে কাটা হয়েছে
+                # সেকশন ৩ ( চাহিদা অনুযায়ী ড্যাশবোর্ডে যুক্ত করা)
+                st.subheader("৩. কার কাছে বর্তমানে কি প্রোডাক্ট রয়েছে (SR Wise Closing Stock)")
+                # ৩ নম্বর সেকশনের প্রথম লাইনে কলামের নাম বা হেডার থাকে (Index 30), তাই একটু আলাদাভাবে কাটা হয়েছে
                 idx_sr = df_dash[df_dash.iloc[:, 0].astype(str).str.contains("কার কাছে বর্তমানে", na=False)].index
                 if not idx_sr.empty:
                     start_sr = idx_sr[0] + 1
                     # কলাম হেডার (SR Name, Sim, Swap Sim ইত্যাদি)
                     sr_cols = df_dash.iloc[start_sr].dropna().tolist()
                     
-                    # ডেটা রীড (টোটাল রো সহ ১৩ জন কর্মীর ডেটা নেওয়ার জন্য num_rows=14)
+                    # ডেটা রীড (টোটাল রো সহ ১৩ জন কর্মীর ডেটা নেওয়ার জন্য num_rows=14)
                     df_sr_stock = df_dash.iloc[start_sr+1 : start_sr+15, 0:len(sr_cols)].copy()
                     df_sr_stock.columns = sr_cols
                     df_sr_stock = df_sr_stock.dropna(subset=[sr_cols[0]])
@@ -143,6 +182,15 @@ elif mode == "দৈনিক রিপোর্ট":
                 fig3 = px.bar(df_profit_clean, x='প্রোডাক্ট', y=['মোট কেনা', 'মোট বিক্রি', 'লাভ'], 
                               title="প্রোডাক্ট অনুযায়ী লাভ ও খরচের তুলনামূলক গ্রাফ", barmode='group')
                 st.plotly_chart(fig3, use_container_width=True)
+
+                # --- ৪. দৈনিক রিপোর্টের লাভ-ক্ষতি এক্সেল ডাউনলোড বাটন যোগ করা হয়েছে ---
+                daily_excel_data = convert_df_to_excel(df_profit_clean)
+                st.download_button(
+                    label="📥 আজকের লাভ-ক্ষতির রিপোর্ট ডাউনলোড করুন (Excel)",
+                    data=daily_excel_data,
+                    file_name=f"Daily_Profit_Report_{clean_date}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
             except Exception as e:
                 st.error(f"আর্থিক খতিয়ান লোড করতে সমস্যা হয়েছে: {e}")
 
@@ -155,6 +203,10 @@ else:
         monthly_files = [f for f in files if selected_month in f]
         
         if monthly_files:
+            # --- ৫. মাসিক রিপোর্টের উপরে ডাইনামিক মাসের নাম প্রদর্শন করা হয়েছে ---
+            st.markdown(f"<h3 style='text-align: center; color: #444444;'>📅 মাসিক সামারি রিপোর্ট: {selected_month}</h3>", unsafe_allow_html=True)
+            st.markdown("---")
+
             st.success(f"📊 {selected_month} মাসের মোট {len(monthly_files)} টি ফাইল পাওয়া গেছে।")
             
             m_sales_list = []
@@ -250,6 +302,15 @@ else:
                     
                     fig_m_profit = px.bar(monthly_profit_sum, x='প্রোডাক্ট', y='লাভ', text='লাভ', title="মাসিক নিট লাভ (প্রোডাক্ট অনুযায়ী)")
                     st.plotly_chart(fig_m_profit, use_container_width=True)
+
+                    # --- ৬. মাসিক সামারি রিপোর্টের এক্সেল ডাউনলোড বাটন যোগ করা হয়েছে ---
+                    monthly_excel_data = convert_df_to_excel(monthly_profit_sum)
+                    st.download_button(
+                        label="📥 পুরো মাসের রিপোর্ট ডাউনলোড করুন (Excel)",
+                        data=monthly_excel_data,
+                        file_name=f"Monthly_Report_{selected_month}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
         else:
             st.warning(f"⚠️ '{selected_month}' ফরম্যাটের কোনো ফাইল পাওয়া যায়নি।")
 
