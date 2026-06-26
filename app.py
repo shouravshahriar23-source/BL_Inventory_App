@@ -2,18 +2,25 @@ import streamlit as st
 import pandas as pd
 import os
 import plotly.express as px
-from io import BytesIO  # <-- এক্সেল ডাউনলোডের জন্য নতুন যোগ করা হয়েছে
+from io import BytesIO
 
-# ফোল্ডার稳 কনফিগারেশন
+# ফোল্ডার কনফিগারেশন
 FOLDER_PATH = "uploaded_files"
 if not os.path.exists(FOLDER_PATH):
     os.makedirs(FOLDER_PATH)
 
-st.set_page_config(page_title="Banglalink Inventory & Monthly Analyzer", layout="wide")
+st.set_page_config(page_title="Banglalink DD House Inventory & Product Analyzer", layout="wide")
 
-# --- ১. সিকিউর লগইন সিস্টেম (মেইন পেজ কনফিগারেশনের নিচে যোগ করা হয়েছে) ---
+# --- ১. মাল্টি-ইউজার লগইন সিস্টেম ---
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
+    st.session_state["user_role"] = "Viewer"  # ডিফল্ট রোল ভিউয়ার
+
+# ইউজারনেম এবং পাসওয়ার্ডের তালিকা (এখানে ইচ্ছামতো ইউজার বাড়ানো যাবে)
+user_credentials = {
+    "Shourav": {"password": "admin123", "role": "Admin"},   # এডমিন (ফাইল আপলোড করতে পারবে)
+    "Viewer": {"password": "mymtan13", "role": "Viewer"}   # স্টাফ/অন্যান্যরা (শুধু দেখতে পারবে)
+}
 
 if not st.session_state["logged_in"]:
     st.markdown("<br><br><h2 style='text-align: center; color: #FF6600;'>🔐 Banglalink Inventory System Login</h2>", unsafe_allow_html=True)
@@ -26,22 +33,38 @@ if not st.session_state["logged_in"]:
         st.markdown("</div>", unsafe_allow_html=True)
         
         if login_btn:
-            if username == "Shourav" and password == "admin123":
+            if username in user_credentials and password == user_credentials[username]["password"]:
                 st.session_state["logged_in"] = True
+                st.session_state["user_role"] = user_credentials[username]["role"]  # রোল সেভ হবে (Admin নাকি Viewer)
                 st.rerun()
             else:
                 st.error("❌ ভুল ইউজারনেম অথবা পাসওয়ার্ড! আবার চেষ্টা করুন।")
-    st.stop()  # লগইন না হওয়া পর্যন্ত নিচের মূল কোড রান হবে না
+    st.stop()
 
 # --- লগইন সফল হলে নিচের মূল কোডটি রান হবে ---
 
-st.markdown("<h1 style='text-align: center; color: #FF6600;'>📶 Banglalink Distribution House</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center; color: #FF6600;'>📶 Banglalink DD House MYMTAN13</h1>", unsafe_allow_html=True)
 
 # ফাইল লোড করা (শুধুমাত্র .xlsx ফাইল প্রসেস করা হবে)
 files = [f for f in os.listdir(FOLDER_PATH) if f.endswith(".xlsx")]
 files.sort(reverse=True)
 
 mode = st.sidebar.radio("মোড সিলেক্ট করুন:", ["দৈনিক রিপোর্ট", "মাসিক সামারি"])
+
+
+# --- ২. শুধুমাত্র Admin (Shourav) এর জন্য ফাইল আপলোডার প্রোটেকশন ---
+if st.session_state["user_role"] == "Admin":
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("<b style='color: #FF6600;'>🛠️ অ্যাডমিন প্যানেল (ফাইল আপলোড)</b>", unsafe_allow_html=True)
+    uploaded_file = st.sidebar.file_uploader("📤 নতুন xlsx ফাইল আপলোড করুন", type=["xlsx"])
+
+    if uploaded_file is not None:
+        file_path = os.path.join(FOLDER_PATH, uploaded_file.name)
+        with open(file_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
+        st.sidebar.success(f"✅ {uploaded_file.name} successfully upload hoyeche!")
+        st.rerun()
+
 
 # Helper function: Excel data clean & dynamic row extraction
 def get_clean_section(df, start_keyword, num_rows=12, cols_range=(0, 4)):
@@ -51,7 +74,7 @@ def get_clean_section(df, start_keyword, num_rows=12, cols_range=(0, 4)):
         sub_df = df.iloc[start_idx:start_idx+num_rows, cols_range[0]:cols_range[1]].copy()
         sub_df = sub_df.dropna(subset=[sub_df.columns[0]])
         
-        # প্রোডাক্ট বা কর্মীর তালিকায় হেডলাইন বা অপ্রয়োজনীয় রো বাদ দেওয়ার ফিল্টার
+        # প্রোডাক্ট বা কর্মীর তালিকায় হেডライン বা অপ্রয়োজনীয় রো বাদ দেওয়ার ফিল্টার
         invalid_keywords = [
             "Total", "সর্বমোট", "প্রোডাক্টের নাম", "Product Name", "Product", 
             "মোট প্রোডাক্ট", "Total Product Profit", "কার কাছে বর্তমানে", 
@@ -62,7 +85,7 @@ def get_clean_section(df, start_keyword, num_rows=12, cols_range=(0, 4)):
         return sub_df
     return pd.DataFrame()
 
-# --- ২. এক্সেল কনভার্ট করার হেল্পার ফাংশন (get_clean_section এর নিচে যোগ করা হয়েছে) ---
+# এক্সেল কনভার্ট করার হেল্পার ফাংশন
 def convert_df_to_excel(df):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -79,7 +102,7 @@ elif mode == "দৈনিক রিপোর্ট":
     if selected_file:
         file_path = os.path.join(FOLDER_PATH, selected_file)
         
-        # --- ৩. দৈনিক রিপোর্টের উপরে তারিখ প্রদর্শন (ফাইলের নাম থেকে ডাইনামিকালি বের করা) ---
+        # দৈনিক রিপোর্টের উপরে তারিখ প্রদর্শন
         clean_date = selected_file.replace("Final Daily House  Inventory Master Tracker ", "").replace(".xlsx", "").strip()
         st.markdown(f"<h3 style='text-align: center; color: #444444;'>📅 রিপোর্টের তারিখ: {clean_date}</h3>", unsafe_allow_html=True)
         st.markdown("---")
@@ -107,21 +130,17 @@ elif mode == "দৈনিক রিপোর্ট":
                     df_sales[col] = pd.to_numeric(df_sales[col], errors='coerce').fillna(0).astype(int)
                 st.dataframe(df_sales, use_container_width=True, hide_index=True)
                 
-                # সেকশন ৩ ( চাহিদা অনুযায়ী ড্যাশবোর্ডে যুক্ত করা)
+                # সেকশন ৩
                 st.subheader("৩. কার কাছে বর্তমানে কি প্রোডাক্ট রয়েছে (SR Wise Closing Stock)")
-                # ৩ নম্বর সেকশনের প্রথম লাইনে কলামের নাম বা হেডার থাকে (Index 30), তাই একটু আলাদাভাবে কাটা হয়েছে
                 idx_sr = df_dash[df_dash.iloc[:, 0].astype(str).str.contains("কার কাছে বর্তমানে", na=False)].index
                 if not idx_sr.empty:
                     start_sr = idx_sr[0] + 1
-                    # কলাম হেডার (SR Name, Sim, Swap Sim ইত্যাদি)
                     sr_cols = df_dash.iloc[start_sr].dropna().tolist()
                     
-                    # ডেটা রীড (টোটাল রো সহ ১৩ জন কর্মীর ডেটা নেওয়ার জন্য num_rows=14)
                     df_sr_stock = df_dash.iloc[start_sr+1 : start_sr+15, 0:len(sr_cols)].copy()
                     df_sr_stock.columns = sr_cols
                     df_sr_stock = df_sr_stock.dropna(subset=[sr_cols[0]])
                     
-                    # কোনো কারণে হেডলাইন ভেতরে ঢুকলে তা পরিষ্কার করা
                     df_sr_stock = df_sr_stock[~df_sr_stock.iloc[:, 0].astype(str).str.contains("কার কাছে|SR-এর নাম", na=False)]
                     st.dataframe(df_sr_stock, use_container_width=True, hide_index=True)
                 
@@ -183,7 +202,7 @@ elif mode == "দৈনিক রিপোর্ট":
                               title="প্রোডাক্ট অনুযায়ী লাভ ও খরচের তুলনামূলক গ্রাফ", barmode='group')
                 st.plotly_chart(fig3, use_container_width=True)
 
-                # --- ৪. দৈনিক রিপোর্টের লাভ-ক্ষতি এক্সেল ডাউনলোড বাটন যোগ করা হয়েছে ---
+                # দৈনিক রিপোর্টের লাভ-ক্ষতি এক্সেল ডাউনলোড বাটন
                 daily_excel_data = convert_df_to_excel(df_profit_clean)
                 st.download_button(
                     label="📥 আজকের লাভ-ক্ষতির রিপোর্ট ডাউনলোড করুন (Excel)",
@@ -203,7 +222,6 @@ else:
         monthly_files = [f for f in files if selected_month in f]
         
         if monthly_files:
-            # --- ৫. মাসিক রিপোর্টের উপরে ডাইনামিক মাসের নাম প্রদর্শন করা হয়েছে ---
             st.markdown(f"<h3 style='text-align: center; color: #444444;'>📅 মাসিক সামারি রিপোর্ট: {selected_month}</h3>", unsafe_allow_html=True)
             st.markdown("---")
 
@@ -303,7 +321,7 @@ else:
                     fig_m_profit = px.bar(monthly_profit_sum, x='প্রোডাক্ট', y='লাভ', text='লাভ', title="মাসিক নিট লাভ (প্রোডাক্ট অনুযায়ী)")
                     st.plotly_chart(fig_m_profit, use_container_width=True)
 
-                    # --- ৬. মাসিক সামারি রিপোর্টের এক্সেল ডাউনলোড বাটন যোগ করা হয়েছে ---
+                    # মাসিক সামারি রিপোর্টের এক্সেল ডাউনলোড বাটন
                     monthly_excel_data = convert_df_to_excel(monthly_profit_sum)
                     st.download_button(
                         label="📥 পুরো মাসের রিপোর্ট ডাউনলোড করুন (Excel)",
@@ -324,8 +342,8 @@ hide_default_style = """
 st.markdown(hide_default_style, unsafe_allow_html=True)
 
 # একদম নিচে আলাদা লাইনে ডেভেলপারের নাম দেখানোর কোড
-st.markdown("---") # এটি একটি সুন্দর চিকন ডিভাইডার লাইন তৈরি করবে
+st.markdown("---")
 st.markdown(
-    "<p style='text-align: right; color: #555555; font-size: 14px; font-weight: 500;'>Created By Shourav Shahriar</p>", 
+    "<p style='text-align: right; color: #555555; font-size: 14px; font-weight: 500;'> @ Shourav Shahriar</p>", 
     unsafe_allow_html=True
 )
