@@ -11,59 +11,14 @@ if not os.path.exists(FOLDER_PATH):
 
 st.set_page_config(page_title="Banglalink DD House Inventory & Product Analyzer", layout="wide")
 
-# --- ১. মাল্টি-ইউজার লগইন সিস্টেম ---
-if "logged_in" not in st.session_state:
-    st.session_state["logged_in"] = False
-    st.session_state["user_role"] = "Viewer"  # ডিফল্ট রোল ভিউয়ার
-
-# ইউজারনেম এবং পাসওয়ার্ডের তালিকা (এখানে ইচ্ছামতো ইউজার বাড়ানো যাবে)
-user_credentials = {
-    "Shourav": {"password": "admin123", "role": "Admin"},   # এডমিন (ফাইল আপলোড করতে পারবে)
-    "Viewer": {"password": "mymtan13", "role": "Viewer"}   # স্টাফ/অন্যান্যরা (শুধু দেখতে পারবে)
-}
-
-if not st.session_state["logged_in"]:
-    st.markdown("<br><br><h2 style='text-align: center; color: #FF6600;'>🔐 Banglalink Inventory System Login</h2>", unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1, 1.5, 1])
-    with col2:
-        st.markdown("<div style='background-color: #f9f9f9; padding: 25px; border-radius: 10px; border: 1px solid #ddd;'>", unsafe_allow_html=True)
-        username = st.text_input("ইউজারনেম (Username):", key="user_input")
-        password = st.text_input("পাসওয়ার্ড (Password):", type="password", key="pass_input")
-        login_btn = st.button("লগইন করুন", use_container_width=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-        
-        if login_btn:
-            if username in user_credentials and password == user_credentials[username]["password"]:
-                st.session_state["logged_in"] = True
-                st.session_state["user_role"] = user_credentials[username]["role"]  # রোল সেভ হবে (Admin নাকি Viewer)
-                st.rerun()
-            else:
-                st.error("❌ ভুল ইউজারনেম অথবা পাসওয়ার্ড! আবার চেষ্টা করুন।")
-    st.stop()
-
-# --- লগইন সফল হলে নিচের মূল কোডটি রান হবে ---
-
+# --- মূল হেডার ---
 st.markdown("<h1 style='text-align: center; color: #FF6600;'>📶 Banglalink DD House MYMTAN13</h1>", unsafe_allow_html=True)
 
-# ফাইল লোড করা (শুধুমাত্র .xlsx ফাইল প্রসেস করা হবে)
+# ফাইল লোড করা ( can be read from the local directory)
 files = [f for f in os.listdir(FOLDER_PATH) if f.endswith(".xlsx")]
 files.sort(reverse=True)
 
 mode = st.sidebar.radio("মোড সিলেক্ট করুন:", ["দৈনিক রিপোর্ট", "মাসিক সামারি"])
-
-
-# --- ২. শুধুমাত্র Admin (Shourav) এর জন্য ফাইল আপলোডার প্রোটেকশন ---
-if st.session_state["user_role"] == "Admin":
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("<b style='color: #FF6600;'>🛠️ অ্যাডমিন প্যানেল (ফাইল আপলোড)</b>", unsafe_allow_html=True)
-    uploaded_file = st.sidebar.file_uploader("📤 নতুন xlsx ফাইল আপলোড করুন", type=["xlsx"])
-
-    if uploaded_file is not None:
-        file_path = os.path.join(FOLDER_PATH, uploaded_file.name)
-        with open(file_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-        st.sidebar.success(f"✅ {uploaded_file.name} successfully upload hoyeche!")
-        st.rerun()
 
 
 # Helper function: Excel data clean & dynamic row extraction
@@ -74,7 +29,7 @@ def get_clean_section(df, start_keyword, num_rows=12, cols_range=(0, 4)):
         sub_df = df.iloc[start_idx:start_idx+num_rows, cols_range[0]:cols_range[1]].copy()
         sub_df = sub_df.dropna(subset=[sub_df.columns[0]])
         
-        # প্রোডাক্ট বা কর্মীর তালিকায় হেডライン বা অপ্রয়োজনীয় রো বাদ দেওয়ার ফিল্টার
+        # প্রোডাক্ট বা কর্মীর তালিকায় হেডলাইন বা অপ্রয়োজনীয় রো বাদ দেওয়ার ফিল্টার
         invalid_keywords = [
             "Total", "সর্বমোট", "প্রোডাক্টের নাম", "Product Name", "Product", 
             "মোট প্রোডাক্ট", "Total Product Profit", "কার কাছে বর্তমানে", 
