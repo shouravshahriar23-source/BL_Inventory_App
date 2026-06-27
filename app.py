@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import os
+import re
+from datetime import datetime
 import plotly.express as px
 from io import BytesIO
 
@@ -14,9 +16,40 @@ st.set_page_config(page_title="Banglalink DD House Inventory & Product Analyzer"
 # --- মূল হেডার ---
 st.markdown("<h1 style='text-align: center; color: #FF6600;'>📶 Banglalink DD House MYMTAN13</h1>", unsafe_allow_html=True)
 
-# ফাইল লোড করা ( can be read from the local directory)
+# ফাইল লোড করা (can be read from the local directory)
 files = [f for f in os.listdir(FOLDER_PATH) if f.endswith(".xlsx")]
-files.sort(reverse=True)
+
+# --- হেল্পার ফাংশন: ফাইল নাম থেকে তারিখের অবজেক্ট তৈরি করা ---
+def parse_file_date(filename):
+    # ফাইলের নামের শেষে YY-MM-DD ফরম্যাট খোঁজা (যেমন: 26-06-01)
+    match = re.search(r'(\d{2})[-_](\d{2})[-_](\d{2})\.xlsx$', filename)
+    if match:
+        year, month, day = match.groups()
+        full_year = "20" + year  # '26' কে '2026' এ রূপান্তর
+        try:
+            return datetime.strptime(f"{full_year}-{month}-{day}", "%Y-%m-%d")
+        except:
+            pass
+    # যদি কোনো কারণে ফরম্যাট না মিলে, ফাইলের মডিফাইড টাইম ব্যবহার করা হবে
+    try:
+        return datetime.fromtimestamp(os.path.getmtime(os.path.join(FOLDER_PATH, filename)))
+    except:
+        return datetime.now()
+
+# ফাইল এবং তারিখের মধ্যে একটি ম্যাপিং তৈরি করা ও সাজানো
+file_mappings = []
+for f in files:
+    f_date = parse_file_date(f)
+    file_mappings.append({
+        "filename": f,
+        "date_obj": f_date,
+        "daily_display": f_date.strftime("%d %b %Y (%A)"),    # যেমন: 01 Jun 2026 (Monday)
+        "monthly_display": f_date.strftime("%B %Y"),          # যেমন: June 2026
+        "short_month": f_date.strftime("%y-%m")               # যেমন: 26-06 (ফাইল ফিল্টারের জন্য)
+    })
+
+# নতুন ফাইল সবার উপরে রাখার জন্য তারিখ অনুযায়ী সাজানো
+file_mappings.sort(key=lambda x: x["date_obj"], reverse=True)
 
 mode = st.sidebar.radio("মোড সিলেক্ট করুন:", ["দৈনিক রিপোর্ট", "মাসিক সামারি"])
 
@@ -53,12 +86,15 @@ if not files:
 
 # --- দৈনিক রিপোর্ট লজিক ---
 elif mode == "দৈনিক রিপোর্ট":
-    selected_file = st.sidebar.selectbox("📅 ফাইল সিলেক্ট করুন:", files)
-    if selected_file:
+    daily_options = [f["daily_display"] for f in file_mappings]
+    selected_display = st.sidebar.selectbox("📅 তারিখ সিলেক্ট করুন:", daily_options)
+    
+    if selected_display:
+        selected_file_pack = next(item for item in file_mappings if item["daily_display"] == selected_display)
+        selected_file = selected_file_pack["filename"]
         file_path = os.path.join(FOLDER_PATH, selected_file)
         
-        # দৈনিক রিপোর্টের উপরে তারিখ প্রদর্শন
-        clean_date = selected_file.replace("Final Daily House  Inventory Master Tracker ", "").replace(".xlsx", "").strip()
+        clean_date = selected_file_pack["date_obj"].strftime("%d %B %Y (%A)")
         st.markdown(f"<h3 style='text-align: center; color: #444444;'>📅 রিপোর্টের তারিখ: {clean_date}</h3>", unsafe_allow_html=True)
         st.markdown("---")
         
@@ -71,13 +107,11 @@ elif mode == "দৈনিক রিপোর্ট":
             try:
                 df_dash = read_sheet('Dashboard Summary')
                 
-                # সেকশন ১
                 st.subheader("১. হাউজের মূল স্টক")
                 df_stock = get_clean_section(df_dash, "হাউজের মূল স্টক", 12, (0, 4))
                 df_stock.columns = ['প্রোডাক্ট', 'ওপেনিং', 'SR ইস্যু', 'বর্তমান স্টক']
                 st.dataframe(df_stock, use_container_width=True, hide_index=True)
                 
-                # সেকশন ২
                 st.subheader("২. প্রোডাক্ট অনুযায়ী মোট বিক্রি ও মার্কেট হোল্ড")
                 df_sales = get_clean_section(df_dash, "মোট বিক্রি ও মার্কেট হোল্ড", 12, (0, 4))
                 df_sales.columns = ['প্রোডাক্ট', 'মোট বিক্রি', 'মার্কেট হোল্ড', 'SR থেকে ফেরত']
@@ -85,7 +119,6 @@ elif mode == "দৈনিক রিপোর্ট":
                     df_sales[col] = pd.to_numeric(df_sales[col], errors='coerce').fillna(0).astype(int)
                 st.dataframe(df_sales, use_container_width=True, hide_index=True)
                 
-                # সেকশন ৩
                 st.subheader("৩. কার কাছে বর্তমানে কি প্রোডাক্ট রয়েছে (SR Wise Closing Stock)")
                 idx_sr = df_dash[df_dash.iloc[:, 0].astype(str).str.contains("কার কাছে বর্তমানে", na=False)].index
                 if not idx_sr.empty:
@@ -99,7 +132,6 @@ elif mode == "দৈনিক রিপোর্ট":
                     df_sr_stock = df_sr_stock[~df_sr_stock.iloc[:, 0].astype(str).str.contains("কার কাছে|SR-এর নাম", na=False)]
                     st.dataframe(df_sr_stock, use_container_width=True, hide_index=True)
                 
-                # চার্ট
                 fig = px.bar(df_sales, x='প্রোডাক্ট', y='মোট বিক্রি', text='মোট বিক্রি', title="আজকের প্রোডাক্ট বিক্রির চার্ট")
                 st.plotly_chart(fig, use_container_width=True)
                 
@@ -153,16 +185,18 @@ elif mode == "দৈনিক রিপোর্ট":
                 st.subheader("💰 আর্থিক সামারি (লাভ ও লস)")
                 st.dataframe(df_profit_clean, use_container_width=True, hide_index=True)
                 
+                total_daily_profit = df_profit_clean['লাভ'].sum()
+                st.metric(label="💵 আজকের সর্বমোট নিট লাভ", value=f"{total_daily_profit:,.2f} টাকা")
+                
                 fig3 = px.bar(df_profit_clean, x='প্রোডাক্ট', y=['মোট কেনা', 'মোট বিক্রি', 'লাভ'], 
                               title="প্রোডাক্ট অনুযায়ী লাভ ও খরচের তুলনামূলক গ্রাফ", barmode='group')
                 st.plotly_chart(fig3, use_container_width=True)
 
-                # দৈনিক রিপোর্টের লাভ-ক্ষতি এক্সেল ডাউনলোড বাটন
                 daily_excel_data = convert_df_to_excel(df_profit_clean)
                 st.download_button(
                     label="📥 আজকের লাভ-ক্ষতির রিপোর্ট ডাউনলোড করুন (Excel)",
                     data=daily_excel_data,
-                    file_name=f"Daily_Profit_Report_{clean_date}.xlsx",
+                    file_name=f"Daily_Profit_Report_{selected_file_pack['date_obj'].strftime('%Y-%m-%d')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
             except Exception as e:
@@ -170,17 +204,22 @@ elif mode == "দৈনিক রিপোর্ট":
 
 # --- মাসিক সামারি লজিক ---
 else:
-    st.subheader("📅 মাসিক সামারি রিপোর্ট")
-    selected_month = st.sidebar.text_input("মাস লিখুন (যেমন: 26-06):", "26-06")
+    month_options = {}
+    for f in file_mappings:
+        if f["monthly_display"] not in month_options:
+            month_options[f["monthly_display"]] = f["short_month"]
+            
+    selected_month_name = st.sidebar.selectbox("📅 মাস সিলেক্ট করুন:", list(month_options.keys()))
     
-    if selected_month:
-        monthly_files = [f for f in files if selected_month in f]
+    if selected_month_name:
+        short_month_format = month_options[selected_month_name]
+        monthly_files = [f for f in files if short_month_format in f]
         
         if monthly_files:
-            st.markdown(f"<h3 style='text-align: center; color: #444444;'>📅 মাসিক সামারি রিপোর্ট: {selected_month}</h3>", unsafe_allow_html=True)
+            st.markdown(f"<h3 style='text-align: center; color: #444444;'>📅 মাসিক সামারি রিপোর্ট: {selected_month_name}</h3>", unsafe_allow_html=True)
             st.markdown("---")
 
-            st.success(f"📊 {selected_month} মাসের মোট {len(monthly_files)} টি ফাইল পাওয়া গেছে।")
+            st.success(f"📊 {selected_month_name} মাসের মোট {len(monthly_files)} টি ফাইল পাওয়া গেছে।")
             
             m_sales_list = []
             m_person_list = []
@@ -194,13 +233,11 @@ else:
                     df_e = pd.read_excel(file_path, sheet_name='Daily Data Entry', header=None)
                     df_p = pd.read_excel(file_path, sheet_name='Daily Profit & Accounts', header=None)
                     
-                    # ১. সেলস সামারি ডেটা
                     sl_df = get_clean_section(df_d, "মোট বিক্রি ও মার্কেট হোল্ড", 12, (0, 2))
                     if not sl_df.empty:
                         sl_df.columns = ['প্রোডাক্ট', 'মোট বিক্রি']
                         m_sales_list.append(sl_df)
                         
-                    # ২. পার্সন ওয়াইজ ডেটা
                     mask = df_e.iloc[:, 0].astype(str).str.contains("RSO|Supervisor|BP", case=False, na=False)
                     all_indices = df_e[mask].index.tolist()
                     for idx in all_indices:
@@ -213,7 +250,6 @@ else:
                         p_data['Name'] = p_name
                         m_person_list.append(p_data)
                         
-                    # ৩. প্রফিট ডেটা
                     p_df = df_p.iloc[3:14, 0:8].copy()
                     p_df.columns = ['প্রোডাক্ট', 'বিক্রি সংখ্যা', 'কেনা দাম', 'বিক্রি দাম', 'লেস', 'মোট কেনা', 'মোট বিক্রি', 'লাভ']
                     p_df = p_df.dropna(subset=['প্রোডাক্ট'])
@@ -225,7 +261,6 @@ else:
                     
             mtab1, mtab2, mtab3 = st.tabs(["📊 মাসিক মোট বিক্রি", "👤 কর্মীভিত্তিক মাসিক পারফরম্যান্স", "💰 মাসিক লাভ-ক্ষতি"])
             
-            # Tab 1
             with mtab1:
                 if m_sales_list:
                     all_sales_df = pd.concat(m_sales_list)
@@ -238,7 +273,6 @@ else:
                     fig_month = px.bar(monthly_sales_sum, x='প্রোডাক্ট', y='মোট বিক্রি', text='মোট বিক্রি', title="মাসিক মোট বিক্রির সামারি")
                     st.plotly_chart(fig_month, use_container_width=True)
 
-            # Tab 2
             with mtab2:
                 if m_person_list:
                     all_people_df = pd.concat(m_person_list)
@@ -258,34 +292,33 @@ else:
                     fig_staff = px.bar(staff_summary, x='প্রোডাক্ট', y='Sales', text='Sales', title=f"{selected_staff} এর মাসিক মোট বিক্রির গ্রাফ")
                     st.plotly_chart(fig_staff, use_container_width=True)
 
-            # Tab 3
             with mtab3:
                 if m_profit_list:
                     all_profit_df = pd.concat(m_profit_list)
                     for col in ['বিক্রি সংখ্যা', 'মোট কেনা', 'মোট বিক্রি', 'লাভ']:
                         all_profit_df[col] = pd.to_numeric(all_profit_df[col], errors='coerce').fillna(0).astype(float)
                         
+                    # এখানে 'প্রোডাক্ট' স্পেলিং ফিক্স করে নিখুঁত 'প্রোডাক্ট' করা হয়েছে
                     monthly_profit_sum = all_profit_df.groupby('প্রোডাক্ট')[['বিক্রি সংখ্যা', 'মোট কেনা', 'মোট বিক্রি', 'লাভ']].sum().reset_index()
                     
                     st.subheader("💰 এই মাসের সর্বমোট লাভ-ক্ষতি ও রেভিনিউ হিসাব")
                     st.dataframe(monthly_profit_sum, use_container_width=True, hide_index=True)
                     
                     total_m_profit = monthly_profit_sum['লাভ'].sum()
-                    st.metric(label=f"💵 {selected_month} মাসের মোট নেট প্রফিট", value=f"{total_m_profit:,.2f} টাকা")
+                    st.metric(label=f"💵 {selected_month_name} মাসের মোট নেট প্রফিট", value=f"{total_m_profit:,.2f} টাকা")
                     
                     fig_m_profit = px.bar(monthly_profit_sum, x='প্রোডাক্ট', y='লাভ', text='লাভ', title="মাসিক নিট লাভ (প্রোডাক্ট অনুযায়ী)")
                     st.plotly_chart(fig_m_profit, use_container_width=True)
 
-                    # মাসিক সামারি রিপোর্টের এক্সেল ডাউনলোড বাটন
                     monthly_excel_data = convert_df_to_excel(monthly_profit_sum)
                     st.download_button(
                         label="📥 পুরো মাসের রিপোর্ট ডাউনলোড করুন (Excel)",
                         data=monthly_excel_data,
-                        file_name=f"Monthly_Report_{selected_month}.xlsx",
+                        file_name=f"Monthly_Report_{selected_month_name.replace(' ', '_')}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     )
         else:
-            st.warning(f"⚠️ '{selected_month}' ফরম্যাটের কোনো ফাইল পাওয়া যায়নি।")
+            st.warning(f"⚠️ '{selected_month_name}' ফরম্যাটের কোনো ফাইল পাওয়া যায়নি।")
 
 
 # স্ট্রিমলিটের ডিফল্ট ফুটার হাইড করার কোড
